@@ -1,0 +1,600 @@
+
+import { useState } from "react";
+import axios from "axios";
+import "./App.css";
+
+const API = "http://localhost:5000";
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState("register");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [page, setPage] = useState("Dashboard");
+
+  const [products, setProducts] = useState([]);
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [sales, setSales] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [budget, setBudget] = useState(10000);
+
+  const [productForm, setProductForm] = useState({
+    name: "", category: "Clothing", size: "", color: "",
+    quantity: "", purchasePrice: "", sellingPrice: "", imageUrl: ""
+  });
+
+  const [saleForm, setSaleForm] = useState({
+    productId: "", quantity: 1, unitPrice: ""
+  });
+
+  const [customerForm, setCustomerForm] = useState({
+    name: "", phone: "", email: "", address: ""
+  });
+
+  const [orderForm, setOrderForm] = useState({
+    customerId: "", item: "", size: "", color: "",
+    quantity: 1, price: "", deliveryDate: ""
+  });
+
+  const [expenseForm, setExpenseForm] = useState({
+    title: "", amount: "", category: "Shop expenses"
+  });
+
+  const [message, setMessage] = useState("");
+
+  const uid = user?.id;
+
+  const loadData = async (id) => {
+    const endpoints = [
+      ["products", `/api/products/${id}`],
+      ["sales", `/api/sales/${id}`],
+      ["customers", `/api/customers/${id}`],
+      ["orders", `/api/orders/${id}`],
+      ["expenses", `/api/expenses/${id}`],
+      ["budget", `/api/budget/${id}`]
+    ];
+
+    for (const [key, url] of endpoints) {
+      try {
+        const response = await axios.get(API + url);
+        if (key === "products") setProducts(response.data);
+        if (key === "sales") setSales(response.data);
+        if (key === "customers") setCustomers(response.data);
+        if (key === "orders") setOrders(response.data);
+        if (key === "expenses") setExpenses(response.data);
+        if (key === "budget") setBudget(response.data.monthlyBudget || 10000);
+      } catch (error) {
+        console.log(key, error);
+      }
+    }
+  };
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    try {
+      const url = authMode === "register" ? "/api/register" : "/api/login";
+      const body = authMode === "register"
+        ? { fullName, email, password }
+        : { email, password };
+
+      const response = await axios.post(API + url, body);
+      const loggedUser = response.data.user;
+      setUser(loggedUser);
+      await loadData(loggedUser.id);
+      setPage("Dashboard");
+      setMessage("");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Something went wrong. Please try again.");
+    }
+  };
+
+  // ADD OR UPDATE PRODUCT
+  const addProduct = async (e) => {
+    e.preventDefault();
+
+    const productData = {
+      userId: uid,
+      ...productForm,
+      quantity: Number(productForm.quantity),
+      purchasePrice: Number(productForm.purchasePrice),
+      sellingPrice: Number(productForm.sellingPrice)
+    };
+
+    try {
+      if (editingProductId) {
+        await axios.put(`${API}/api/products/${editingProductId}`, productData);
+        setMessage("Product updated successfully!");
+      } else {
+        await axios.post(API + "/api/products", productData);
+        setMessage("Product added successfully!");
+      }
+
+      setProductForm({
+        name: "", category: "Clothing", size: "", color: "",
+        quantity: "", purchasePrice: "", sellingPrice: "", imageUrl: ""
+      });
+
+      setEditingProductId(null);
+      await loadData(uid);
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not save product.");
+    }
+  };
+
+  // EDIT PRODUCT
+  const editProduct = (product) => {
+    setEditingProductId(product._id || product.id);
+
+    setProductForm({
+      name: product.name || "",
+      category: product.category || "Clothing",
+      size: product.size || "",
+      color: product.color || "",
+      quantity: product.quantity ?? "",
+      purchasePrice: product.purchasePrice ?? "",
+      sellingPrice: product.sellingPrice ?? "",
+      imageUrl: product.imageUrl || ""
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // CANCEL PRODUCT EDIT
+  const cancelProductEdit = () => {
+    setEditingProductId(null);
+    setProductForm({
+      name: "", category: "Clothing", size: "", color: "",
+      quantity: "", purchasePrice: "", sellingPrice: "", imageUrl: ""
+    });
+  };
+
+  const deleteProduct = async (id) => {
+    if (!window.confirm("Delete this product?")) return;
+    try {
+      await axios.delete(`${API}/api/products/${id}`, { data: { userId: uid } });
+      await loadData(uid);
+    } catch {
+      setMessage("Could not delete product.");
+    }
+  };
+
+  const addSale = async (e) => {
+    e.preventDefault();
+    const selected = products.find(p => (p._id || p.id) === saleForm.productId);
+    if (!selected) return setMessage("Please select a product.");
+    if (Number(saleForm.quantity) > selected.quantity) {
+      return setMessage("Not enough stock available.");
+    }
+
+    try {
+      await axios.post(API + "/api/sales", {
+        userId: uid,
+        productId: selected._id || selected.id,
+        productName: selected.name,
+        quantity: Number(saleForm.quantity),
+        unitPrice: Number(saleForm.unitPrice || selected.sellingPrice)
+      });
+
+      setSaleForm({ productId: "", quantity: 1, unitPrice: "" });
+      await loadData(uid);
+      setMessage("Sale recorded successfully!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not record sale.");
+    }
+  };
+
+  const addCustomer = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(API + "/api/customers", { userId: uid, ...customerForm });
+      setCustomerForm({ name: "", phone: "", email: "", address: "" });
+      await loadData(uid);
+      setMessage("Customer added successfully!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not add customer.");
+    }
+  };
+
+  const deleteCustomer = async (id) => {
+    if (!window.confirm("Delete this customer?")) return;
+    try {
+      await axios.delete(`${API}/api/customers/${id}`, { data: { userId: uid } });
+      await loadData(uid);
+    } catch {
+      setMessage("Could not delete customer.");
+    }
+  };
+
+  const addOrder = async (e) => {
+    e.preventDefault();
+    const customer = customers.find(c => (c._id || c.id) === orderForm.customerId);
+
+    try {
+      await axios.post(API + "/api/orders", {
+        userId: uid,
+        customerId: customer?._id || customer?.id,
+        customerName: customer?.name || "Walk-in Customer",
+        item: orderForm.item,
+        size: orderForm.size,
+        color: orderForm.color,
+        quantity: Number(orderForm.quantity),
+        price: Number(orderForm.price),
+        deliveryDate: orderForm.deliveryDate
+      });
+
+      setOrderForm({
+        customerId: "", item: "", size: "", color: "",
+        quantity: 1, price: "", deliveryDate: ""
+      });
+
+      await loadData(uid);
+      setMessage("Order created successfully!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not create order.");
+    }
+  };
+
+  const updateOrder = async (id, status) => {
+    try {
+      await axios.put(`${API}/api/orders/${id}`, { userId: uid, status });
+      await loadData(uid);
+    } catch {
+      setMessage("Could not update order.");
+    }
+  };
+
+  const deleteOrder = async (id) => {
+    if (!window.confirm("Delete this order?")) return;
+    try {
+      await axios.delete(`${API}/api/orders/${id}`, { data: { userId: uid } });
+      await loadData(uid);
+    } catch {
+      setMessage("Could not delete order.");
+    }
+  };
+
+  const addExpense = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(API + "/api/expenses", {
+        userId: uid,
+        title: expenseForm.title,
+        amount: Number(expenseForm.amount),
+        category: expenseForm.category,
+        date: new Date().toISOString()
+      });
+
+      setExpenseForm({ title: "", amount: "", category: "Shop expenses" });
+      await loadData(uid);
+      setMessage("Expense saved!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not save expense.");
+    }
+  };
+
+  const deleteExpense = async (id) => {
+    if (!window.confirm("Delete this expense?")) return;
+    try {
+      await axios.delete(`${API}/api/expenses/${id}`);
+      await loadData(uid);
+    } catch {
+      setMessage("Could not delete expense.");
+    }
+  };
+
+  const saveBudget = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`${API}/api/budget/${uid}`, { monthlyBudget: Number(budget) });
+      setMessage("Monthly budget updated!");
+    } catch {
+      setMessage("Could not update budget.");
+    }
+  };
+
+  const money = (value) => "₹" + Number(value || 0).toLocaleString("en-IN");
+  const salesTotal = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const expenseTotal = expenses.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+  const stockCount = products.reduce((sum, p) => sum + Number(p.quantity || 0), 0);
+  const pendingOrders = orders.filter(o => o.status !== "Completed" && o.status !== "Cancelled").length;
+  const lowStock = products.filter(p => Number(p.quantity) <= 5).length;
+
+  const navItems = ["Dashboard", "Inventory", "Sales", "Customers", "Orders", "Expenses", "Reports", "Settings"];
+
+  if (!user) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="auth-brand">
+            <div className="brand-logo">F</div>
+            <p className="brand-name">FINORA</p>
+            <span>BOUTIQUE MANAGEMENT</span>
+          </div>
+          <h1>{authMode === "register" ? "Create your account" : "Welcome back"}</h1>
+          <p className="muted">Manage your boutique, inventory and sales in one place.</p>
+          <form onSubmit={handleAuth} className="form-stack">
+            {authMode === "register" && (
+              <input placeholder="Full name" value={fullName}
+                onChange={e => setFullName(e.target.value)} required />
+            )}
+            <input type="email" placeholder="Email address" value={email}
+              onChange={e => setEmail(e.target.value)} required />
+            <input type="password" placeholder="Password" value={password}
+              onChange={e => setPassword(e.target.value)} required />
+            <button className="primary-btn" type="submit">
+              {authMode === "register" ? "Create Account" : "Login"}
+            </button>
+          </form>
+          {message && <p className="notice">{message}</p>}
+          <p className="auth-switch">
+            {authMode === "register" ? "Already have an account?" : "New to FINORA?"}
+            <button className="text-btn" onClick={() => {
+              setAuthMode(authMode === "register" ? "login" : "register");
+              setMessage("");
+            }}>
+              {authMode === "register" ? "Login" : "Create account"}
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="side-brand">
+          <div className="brand-logo">F</div>
+          <div><strong>FINORA</strong><small>BOUTIQUE STUDIO</small></div>
+        </div>
+        <p className="nav-caption">WORKSPACE</p>
+        <nav>
+          {navItems.map(item => (
+            <button key={item} className={page === item ? "nav-link active" : "nav-link"}
+              onClick={() => { setPage(item); setMessage(""); }}>
+              <span className="nav-dot"></span>{item}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="profile-mini">
+            <div className="avatar">{(user.fullName || user.name || "U").charAt(0).toUpperCase()}</div>
+            <div><strong>{user.fullName || user.name}</strong><small>Administrator</small></div>
+          </div>
+          <button className="logout-btn" onClick={() => {
+            setUser(null); setPage("Dashboard"); setMessage("");
+          }}>Log out</button>
+        </div>
+      </aside>
+
+      <main className="main-area">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">FINORA / WORKSPACE</p>
+            <h1>{page}</h1>
+          </div>
+          <div className="topbar-date">{new Date().toLocaleDateString("en-IN", {
+            day: "numeric", month: "long", year: "numeric"
+          })}</div>
+        </header>
+
+        {message && <div className="notice app-notice">{message}
+          <button onClick={() => setMessage("")}>×</button>
+        </div>}
+
+        {page === "Dashboard" && <>
+          <section className="welcome-banner">
+            <div><p className="eyebrow">YOUR BOUTIQUE OVERVIEW</p>
+              <h2>Welcome back, {user.fullName || user.name}.</h2>
+              <p>Here's what's happening in your boutique today.</p></div>
+            <div className="banner-mark">F</div>
+          </section>
+          <section className="stats-grid">
+            <div className="stat-card"><span>Total Sales</span><strong>{money(salesTotal)}</strong><small>Recorded revenue</small></div>
+            <div className="stat-card"><span>Inventory Units</span><strong>{stockCount}</strong><small>{products.length} products listed</small></div>
+            <div className="stat-card"><span>Active Orders</span><strong>{pendingOrders}</strong><small>Need attention</small></div>
+            <div className="stat-card"><span>Customers</span><strong>{customers.length}</strong><small>Registered customers</small></div>
+          </section>
+          <section className="content-grid">
+            <div className="panel">
+              <div className="panel-heading"><div><p className="eyebrow">STORE ACTIVITY</p><h3>Recent Sales</h3></div>
+                <button className="small-btn" onClick={() => setPage("Sales")}>View all</button></div>
+              {sales.length === 0 ? <p className="empty-state">No sales recorded yet.</p> :
+                sales.slice().reverse().slice(0, 5).map(s => (
+                  <div className="data-row" key={s._id || s.id}>
+                    <div><strong>{s.productName}</strong><small>{new Date(s.date || Date.now()).toLocaleDateString()}</small></div>
+                    <b>{money(s.total)}</b>
+                  </div>
+                ))}
+            </div>
+            <div className="panel">
+              <div className="panel-heading"><div><p className="eyebrow">STOCK CHECK</p><h3>Inventory Alerts</h3></div></div>
+              <div className="big-number">{lowStock}</div>
+              <p className="muted">Products with 5 or fewer units remaining.</p>
+              <button className="primary-btn" onClick={() => setPage("Inventory")}>Manage Inventory</button>
+            </div>
+          </section>
+        </>}
+
+        {page === "Inventory" && <>
+          <div className="section-intro"><p>Add products and keep track of boutique stock, sizes and prices.</p></div>
+          <section className="panel">
+            <div className="panel-heading">
+              <h3>{editingProductId ? "Edit Product" : "Add New Product"}</h3>
+            </div>
+            <form onSubmit={addProduct} className="form-grid">
+              <input placeholder="Product name" value={productForm.name} onChange={e => setProductForm({...productForm, name:e.target.value})} required />
+              <select value={productForm.category} onChange={e => setProductForm({...productForm, category:e.target.value})}>
+                <option>Clothing</option><option>Saree</option><option>Kurti</option><option>Accessories</option><option>Footwear</option><option>Other</option>
+              </select>
+              <input placeholder="Size (S, M, L, Free)" value={productForm.size} onChange={e => setProductForm({...productForm, size:e.target.value})} />
+              <input placeholder="Color" value={productForm.color} onChange={e => setProductForm({...productForm, color:e.target.value})} />
+              <input type="number" min="0" placeholder="Quantity" value={productForm.quantity} onChange={e => setProductForm({...productForm, quantity:e.target.value})} required />
+              <input type="number" min="0" placeholder="Purchase price" value={productForm.purchasePrice} onChange={e => setProductForm({...productForm, purchasePrice:e.target.value})} required />
+              <input type="number" min="0" placeholder="Selling price" value={productForm.sellingPrice} onChange={e => setProductForm({...productForm, sellingPrice:e.target.value})} required />
+              <input placeholder="Image URL (optional)" value={productForm.imageUrl} onChange={e => setProductForm({...productForm, imageUrl:e.target.value})} />
+              <button className="primary-btn" type="submit">
+                {editingProductId ? "Save Changes" : "Add Product"}
+              </button>
+              {editingProductId && (
+                <button className="small-btn" type="button" onClick={cancelProductEdit}>
+                  Cancel
+                </button>
+              )}
+            </form>
+          </section>
+          <section className="panel">
+            <div className="panel-heading"><h3>Product Inventory</h3><span>{products.length} products</span></div>
+            <div className="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Size / Color</th><th>Stock</th><th>Sell Price</th><th>Action</th></tr></thead>
+              <tbody>{products.map(p => <tr key={p._id || p.id}>
+                <td><strong>{p.name}</strong></td><td>{p.category}</td><td>{p.size || "—"} / {p.color || "—"}</td>
+                <td><span className={Number(p.quantity) <= 5 ? "stock-low" : "stock-good"}>{p.quantity}</span></td>
+                <td>{money(p.sellingPrice)}</td>
+                <td>
+                  <button className="small-btn" onClick={() => editProduct(p)}>Edit</button>{" "}
+                  <button className="delete-btn" onClick={() => deleteProduct(p._id || p.id)}>Delete</button>
+                </td>
+              </tr>)}</tbody></table></div>
+            {products.length === 0 && <p className="empty-state">No products yet. Add your first product above.</p>}
+          </section>
+        </>}
+
+        {page === "Sales" && <>
+          <div className="stats-grid one-row">
+            <div className="stat-card"><span>Total Revenue</span><strong>{money(salesTotal)}</strong></div>
+            <div className="stat-card"><span>Sales Count</span><strong>{sales.length}</strong></div>
+          </div>
+          <section className="panel">
+            <div className="panel-heading"><h3>Record a Sale</h3></div>
+            <form onSubmit={addSale} className="form-grid">
+              <select value={saleForm.productId} onChange={e => {
+                const p = products.find(x => (x._id || x.id) === e.target.value);
+                setSaleForm({...saleForm, productId:e.target.value, unitPrice:p?.sellingPrice || ""});
+              }} required>
+                <option value="">Select product</option>
+                {products.map(p => <option key={p._id || p.id} value={p._id || p.id}>{p.name} — Stock: {p.quantity}</option>)}
+              </select>
+              <input type="number" min="1" placeholder="Quantity" value={saleForm.quantity} onChange={e => setSaleForm({...saleForm, quantity:e.target.value})} required />
+              <input type="number" min="0" placeholder="Unit selling price" value={saleForm.unitPrice} onChange={e => setSaleForm({...saleForm, unitPrice:e.target.value})} required />
+              <button className="primary-btn" type="submit">Save Sale</button>
+            </form>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Sales History</h3></div>
+            <div className="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Unit Price</th><th>Total</th><th>Date</th></tr></thead>
+              <tbody>{sales.slice().reverse().map(s => <tr key={s._id || s.id}><td>{s.productName}</td><td>{s.quantity}</td><td>{money(s.unitPrice)}</td><td><strong>{money(s.total)}</strong></td><td>{new Date(s.date).toLocaleDateString()}</td></tr>)}</tbody></table></div>
+            {sales.length === 0 && <p className="empty-state">No sales recorded yet.</p>}
+          </section>
+        </>}
+
+        {page === "Customers" && <>
+          <section className="panel"><div className="panel-heading"><h3>Add Customer</h3></div>
+            <form onSubmit={addCustomer} className="form-grid">
+              <input placeholder="Customer name" value={customerForm.name} onChange={e => setCustomerForm({...customerForm,name:e.target.value})} required />
+              <input placeholder="Phone number" value={customerForm.phone} onChange={e => setCustomerForm({...customerForm,phone:e.target.value})} />
+              <input type="email" placeholder="Email address" value={customerForm.email} onChange={e => setCustomerForm({...customerForm,email:e.target.value})} />
+              <input placeholder="Address" value={customerForm.address} onChange={e => setCustomerForm({...customerForm,address:e.target.value})} />
+              <button className="primary-btn" type="submit">Add Customer</button>
+            </form>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Customer Directory</h3><span>{customers.length} customers</span></div>
+            <div className="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th>Action</th></tr></thead>
+              <tbody>{customers.map(c => <tr key={c._id || c.id}><td><strong>{c.name}</strong></td><td>{c.phone || "—"}</td><td>{c.email || "—"}</td><td>{c.address || "—"}</td><td><button className="delete-btn" onClick={() => deleteCustomer(c._id || c.id)}>Delete</button></td></tr>)}</tbody></table></div>
+            {customers.length === 0 && <p className="empty-state">No customers added yet.</p>}
+          </section>
+        </>}
+
+        {page === "Orders" && <>
+          <section className="panel"><div className="panel-heading"><h3>Create Order</h3></div>
+            <form onSubmit={addOrder} className="form-grid">
+              <select value={orderForm.customerId} onChange={e => setOrderForm({...orderForm,customerId:e.target.value})}>
+                <option value="">Walk-in customer</option>
+                {customers.map(c => <option key={c._id || c.id} value={c._id || c.id}>{c.name}</option>)}
+              </select>
+              <input placeholder="Item / product name" value={orderForm.item} onChange={e => setOrderForm({...orderForm,item:e.target.value})} required />
+              <input placeholder="Size" value={orderForm.size} onChange={e => setOrderForm({...orderForm,size:e.target.value})} />
+              <input placeholder="Color" value={orderForm.color} onChange={e => setOrderForm({...orderForm,color:e.target.value})} />
+              <input type="number" min="1" placeholder="Quantity" value={orderForm.quantity} onChange={e => setOrderForm({...orderForm,quantity:e.target.value})} required />
+              <input type="number" min="0" placeholder="Total price" value={orderForm.price} onChange={e => setOrderForm({...orderForm,price:e.target.value})} required />
+              <label className="field-label">Delivery date<input type="date" value={orderForm.deliveryDate} onChange={e => setOrderForm({...orderForm,deliveryDate:e.target.value})} /></label>
+              <button className="primary-btn" type="submit">Create Order</button>
+            </form>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Order Management</h3><span>{orders.length} orders</span></div>
+            <div className="table-wrap"><table><thead><tr><th>Customer</th><th>Item</th><th>Qty</th><th>Price</th><th>Delivery</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>{orders.map(o => <tr key={o._id || o.id}>
+                <td>{o.customerName}</td><td>{o.item}</td><td>{o.quantity}</td><td>{money(o.price)}</td>
+                <td>{o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString() : "—"}</td>
+                <td><select className="status-select" value={o.status} onChange={e => updateOrder(o._id || o.id,e.target.value)}>
+                  <option>Pending</option><option>In Progress</option><option>Completed</option><option>Cancelled</option>
+                </select></td>
+                <td><button className="delete-btn" onClick={() => deleteOrder(o._id || o.id)}>Delete</button></td>
+              </tr>)}</tbody></table></div>
+            {orders.length === 0 && <p className="empty-state">No orders created yet.</p>}
+          </section>
+        </>}
+
+        {page === "Expenses" && <>
+          <section className="stats-grid one-row">
+            <div className="stat-card"><span>Total Expenses</span><strong>{money(expenseTotal)}</strong></div>
+            <div className="stat-card"><span>Expense Entries</span><strong>{expenses.length}</strong></div>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Add Boutique Expense</h3></div>
+            <form onSubmit={addExpense} className="form-grid">
+              <input placeholder="Expense description" value={expenseForm.title} onChange={e => setExpenseForm({...expenseForm,title:e.target.value})} required />
+              <input type="number" min="0" placeholder="Amount" value={expenseForm.amount} onChange={e => setExpenseForm({...expenseForm,amount:e.target.value})} required />
+              <select value={expenseForm.category} onChange={e => setExpenseForm({...expenseForm,category:e.target.value})}>
+                <option>Shop expenses</option><option>Rent</option><option>Staff salary</option><option>Transport</option><option>Utilities</option><option>Other</option>
+              </select>
+              <button className="primary-btn" type="submit">Save Expense</button>
+            </form>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Expense Records</h3></div>
+            <div className="table-wrap"><table><thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Date</th><th>Action</th></tr></thead>
+              <tbody>{expenses.slice().reverse().map(x => <tr key={x._id || x.id}><td>{x.title}</td><td>{x.category}</td><td>{money(x.amount)}</td><td>{new Date(x.date).toLocaleDateString()}</td><td><button className="delete-btn" onClick={() => deleteExpense(x._id || x.id)}>Delete</button></td></tr>)}</tbody></table></div>
+            {expenses.length === 0 && <p className="empty-state">No expenses added yet.</p>}
+          </section>
+        </>}
+
+        {page === "Reports" && <>
+          <section className="stats-grid">
+            <div className="stat-card"><span>Revenue</span><strong>{money(salesTotal)}</strong></div>
+            <div className="stat-card"><span>Expenses</span><strong>{money(expenseTotal)}</strong></div>
+            <div className="stat-card"><span>Net Difference</span><strong>{money(salesTotal - expenseTotal)}</strong></div>
+            <div className="stat-card"><span>Orders</span><strong>{orders.length}</strong></div>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Business Summary</h3></div>
+            <div className="report-line"><span>Total sales revenue</span><strong>{money(salesTotal)}</strong></div>
+            <div className="report-line"><span>Total recorded expenses</span><strong>{money(expenseTotal)}</strong></div>
+            <div className="report-line"><span>Products in inventory</span><strong>{products.length}</strong></div>
+            <div className="report-line"><span>Total stock units</span><strong>{stockCount}</strong></div>
+            <div className="report-line"><span>Registered customers</span><strong>{customers.length}</strong></div>
+            <div className="report-line"><span>Orders awaiting completion</span><strong>{pendingOrders}</strong></div>
+            <p className="muted report-note">Net difference is sales revenue minus recorded expenses. It is not a full accounting profit calculation.</p>
+          </section>
+        </>}
+
+        {page === "Settings" && <>
+          <section className="panel"><div className="panel-heading"><h3>Business Profile</h3></div>
+            <div className="profile-details"><div><span>Account name</span><strong>{user.fullName || user.name}</strong></div>
+              <div><span>Email address</span><strong>{user.email}</strong></div>
+              <div><span>Platform</span><strong>FINORA Boutique Management</strong></div></div>
+          </section>
+          <section className="panel"><div className="panel-heading"><h3>Monthly Expense Budget</h3></div>
+            <p className="muted">Set a monthly target to monitor your boutique expenses.</p>
+            <form onSubmit={saveBudget} className="budget-form">
+              <input type="number" min="0" value={budget} onChange={e => setBudget(e.target.value)} required />
+              <button className="primary-btn" type="submit">Save Budget</button>
+            </form>
+          </section>
+        </>}
+
+        <footer className="app-footer">FINORA <span>·</span> Boutique Management System</footer>
+      </main>
+    </div>
+  );
+}
+
+export default App;
